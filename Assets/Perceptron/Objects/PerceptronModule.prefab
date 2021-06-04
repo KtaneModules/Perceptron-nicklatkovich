@@ -1565,14 +1565,14 @@ MonoBehaviour:
     type: 2}
   OutputNodePrefab: {fileID: 1421722470656086, guid: b7c34c30b5753f149b4727e96d269536,
     type: 2}
-  ConnectionPrefab: {fileID: 1222555192953886, guid: 5c203884a13a3b440911c435c3ebb1f1,
-    type: 2}
   PerceptronContainer: {fileID: 1001848866081648}
   LayerButton0: {fileID: 114224058765235282}
   LayerButton1: {fileID: 114796437103385976}
   LayerButton2: {fileID: 114778275656952106}
   LayerButton3: {fileID: 114528067794556200}
   Module: {fileID: 114889721562700344}
+  ConnectionPrefab: {fileID: 114367925341634038, guid: 5c203884a13a3b440911c435c3ebb1f1,
+    type: 2}
 --- !u!114 &114116719009969440
 MonoBehaviour:
   m_ObjectHideFlags: 1
