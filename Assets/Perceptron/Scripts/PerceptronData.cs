@@ -58,7 +58,7 @@ public static class PerceptronData {
 		int[] connectionsDelay = Enumerable.Range(0, 5).Select(_ => Random.Range(1, 1000)).ToArray();
 		int accuracy = CalculateAccuracy(inputsCount, outputsCount, answerExample, convergenceRates);
 		int learningTime = CalculateLearningTime(inputsCount, outputsCount, answerExample, connectionsDelay);
-		int requiredAccuracy = accuracy + Random.Range(0, accuracy / 10);
+		int requiredAccuracy = accuracy - Random.Range(0, accuracy / 10);
 		int maxLearningTime = learningTime + Random.Range(0, learningTime / 10);
 		return new ModuleData(inputsCount, outputsCount, requiredAccuracy, maxLearningTime, convergenceRates, answerExample, connectionsDelay);
 	}
