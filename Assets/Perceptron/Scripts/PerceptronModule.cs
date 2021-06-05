@@ -31,6 +31,7 @@ public class PerceptronModule : MonoBehaviour {
 	public KMSelectable Screen;
 	public KMBombModule Module;
 	public KMBombInfo Bomb;
+	public KMAudio Audio;
 	public ConnectionComponent ConnectionPrefab;
 
 	private bool solved = false;
@@ -38,8 +39,6 @@ public class PerceptronModule : MonoBehaviour {
 	private bool training = false;
 	private bool trainingStage = false;
 	private int moduleId;
-	private int inputsCount;
-	private int outputsCount;
 	private int targetAccuracy;
 	private int currentAccuracy;
 	private int accuracyIntervalTo;
@@ -49,6 +48,7 @@ public class PerceptronModule : MonoBehaviour {
 	private int startingLearningTime;
 	private Vector2Int trainingProcess;
 	private PerceptronData.ModuleData data;
+	private KMAudio.KMAudioRef trainingSound;
 	private int[] hiddenLayers;
 	private GameObject[] inputNodes;
 	private GameObject[] outputNodes;
@@ -58,23 +58,22 @@ public class PerceptronModule : MonoBehaviour {
 	private void Start() {
 		moduleId = moduleIdCounter++;
 		hiddenLayers = Enumerable.Range(0, 4).Select(_ => Random.Range(1, 5)).ToArray();
-		inputsCount = Random.Range(1, 5);
-		outputsCount = Random.Range(1, 5);
-		inputNodes = new GameObject[inputsCount];
+		data = PerceptronData.Generate();
+		inputNodes = new GameObject[data.inputsCount];
 		connections = new ConnectionComponent[5][];
-		for (int i = 0; i < inputsCount; i++) {
+		for (int i = 0; i < data.inputsCount; i++) {
 			GameObject input = Instantiate(InputNodePrefab);
 			input.transform.parent = PerceptronContainer.transform;
-			input.transform.localPosition = new Vector3(-NODES_INTERVAL_X * 2.5f, 0f, NODES_INTERVAL_Z * (i - (inputsCount - 1) * 0.5f));
+			input.transform.localPosition = new Vector3(-NODES_INTERVAL_X * 2.5f, 0f, NODES_INTERVAL_Z * (i - (data.inputsCount - 1) * 0.5f));
 			input.transform.localScale = new Vector3(NODE_SIZE, 0.001f, NODE_SIZE);
 			input.transform.localRotation = Quaternion.identity;
 			inputNodes[i] = input;
 		}
-		outputNodes = new GameObject[outputsCount];
-		for (int i = 0; i < outputsCount; i++) {
+		outputNodes = new GameObject[data.outputsCount];
+		for (int i = 0; i < data.outputsCount; i++) {
 			GameObject output = Instantiate(OutputNodePrefab);
 			output.transform.parent = PerceptronContainer.transform;
-			output.transform.localPosition = new Vector3(NODES_INTERVAL_X * 2.5f, 0f, NODES_INTERVAL_Z * (i - (outputsCount - 1) * 0.5f));
+			output.transform.localPosition = new Vector3(NODES_INTERVAL_X * 2.5f, 0f, NODES_INTERVAL_Z * (i - (data.outputsCount - 1) * 0.5f));
 			output.transform.localScale = new Vector3(NODE_SIZE, 0.001f, NODE_SIZE);
 			output.transform.localRotation = Quaternion.identity;
 			outputNodes[i] = output;
@@ -86,15 +85,14 @@ public class PerceptronModule : MonoBehaviour {
 	}
 
 	private void Activate() {
-		data = PerceptronData.Generate();
-		Debug.LogFormat("[Perceptron #{0}] Required accuracy: {1}", moduleId, data.requiredAccuracy);
-		Debug.LogFormat("[Perceptron #{0}] Max learning time: {1}", moduleId, (ParseTime(data.maxLearningTime) / 1e3f).ToString("n3"));
+		Debug.LogFormat("[Perceptron #{0}] Required learning accuracy: {1}", moduleId, data.requiredAccuracy);
+		Debug.LogFormat("[Perceptron #{0}] Max training time: {1}", moduleId, (ParseTime(data.maxLearningTime) / 1e3f).ToString("n3"));
 		Debug.LogFormat("[Perceptron #{0}] Inputs count: {1}", moduleId, data.inputsCount);
 		Debug.LogFormat("[Perceptron #{0}] Outputs count: {1}", moduleId, data.outputsCount);
 		Debug.LogFormat("[Perceptron #{0}] Convergence rates: {1}", moduleId, data.convergenceRates.Select(s => (s / 100f).ToString("n2")).Join(", "));
 		Debug.LogFormat("[Perceptron #{0}] Connection delays: {1}", moduleId, data.connectionsDelay.Select(s => (s / 100f).ToString("n2")).Join(", "));
 		Debug.LogFormat("[Perceptron #{0}] Answer example: {1}", moduleId, data.answerExample.Join(""));
-		UnholdConnectionButton();
+		UnholdConnectionButton(false);
 		LayerButton0.OnInteract += () => { PressLayerButton(0); return false; };
 		LayerButton1.OnInteract += () => { PressLayerButton(1); return false; };
 		LayerButton2.OnInteract += () => { PressLayerButton(2); return false; };
@@ -105,31 +103,45 @@ public class PerceptronModule : MonoBehaviour {
 		ConnectionButton3.OnInteract += () => { HoldConnectionButton(3); return false; };
 		ConnectionButton4.OnInteract += () => { HoldConnectionButton(4); return false; };
 		foreach (KMSelectable button in new[] { ConnectionButton0, ConnectionButton1, ConnectionButton2, ConnectionButton3, ConnectionButton4 }) {
-			button.OnInteractEnded += UnholdConnectionButton;
+			button.OnInteractEnded += () => UnholdConnectionButton();
 		}
+		Bomb.OnBombExploded += () => { if (trainingSound != null) trainingSound.StopSound(); };
 		Screen.OnInteract += () => { PressScreen(); return false; };
 	}
 
 	private void Update() {
 		if (training) {
-			if (connections[trainingProcess.x].Length <= trainingProcess.y) trainingProcess = new Vector2Int(0, Random.Range(0, inputsCount * hiddenLayers[0]));
+			if (connections[trainingProcess.x].Length <= trainingProcess.y) trainingProcess = new Vector2Int(0, Random.Range(0, data.inputsCount * hiddenLayers[0]));
 			connections[trainingProcess.x][trainingProcess.y].weight = Random.Range(0f, 1f);
-			if (trainingProcess.x == 4) trainingProcess = new Vector2Int(0, Random.Range(0, inputsCount * hiddenLayers[0]));
+			if (trainingProcess.x == 4) trainingProcess = new Vector2Int(0, Random.Range(0, data.inputsCount * hiddenLayers[0]));
 			else {
-				int nodeIndexFrom = trainingProcess.y / (trainingProcess.x == 0 ? inputsCount : hiddenLayers[trainingProcess.x - 1]);
+				int nodeIndexFrom = trainingProcess.y / (trainingProcess.x == 0 ? data.inputsCount : hiddenLayers[trainingProcess.x - 1]);
 				int leftNodesCount = hiddenLayers[trainingProcess.x];
-				int nodeIndexTo = Random.Range(0, trainingProcess.x == 3 ? outputsCount : hiddenLayers[trainingProcess.x + 1]);
+				int nodeIndexTo = Random.Range(0, trainingProcess.x == 3 ? data.outputsCount : hiddenLayers[trainingProcess.x + 1]);
 				trainingProcess = new Vector2Int(trainingProcess.x + 1, nodeIndexTo * leftNodesCount + nodeIndexFrom);
 			}
 			if (solved) return;
 			int passedTime = Mathf.CeilToInt(Time.time * 1e3f) - startingLearningTime;
 			if (passedTime >= targetLearningTime) {
+				if (trainingSound != null) {
+					trainingSound.StopSound();
+					trainingSound = null;
+				}
 				CurrentLearningTime.text = (targetLearningTime / 1e3f).ToString("n3");
 				CurrentLearningRate.text = targetAccuracy.ToString();
 				shouldSolve = targetLearningTime <= ParseTime(data.maxLearningTime) && targetAccuracy >= data.requiredAccuracy;
 				Debug.LogFormat("[Perceptron #{0}] Training finished. Accuracy: {1}. Spent time: {2}", moduleId, targetAccuracy, (targetLearningTime / 1e3f).ToString("n3"));
-				training = false;
-				// learning finished
+				if (shouldSolve) {
+					Debug.LogFormat("[Perceptron #{0}] Module solved", moduleId);
+					Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.CorrectChime, transform);
+					Module.HandlePass();
+					solved = true;
+					training = true;
+				} else {
+					training = false;
+					Debug.LogFormat("[Perceptron #{0}] Strike", moduleId);
+					Module.HandleStrike();
+				}
 			} else {
 				CurrentLearningTime.text = (passedTime / 1e3f).ToString("n3");
 				if (passedTime > accuracyTimeTo) {
@@ -146,6 +158,7 @@ public class PerceptronModule : MonoBehaviour {
 
 	private void PressLayerButton(int layer) {
 		if (trainingStage) return;
+		Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonPress, transform);
 		hiddenLayers[layer] = hiddenLayers[layer] % 4 + 1;
 		foreach (GameObject node in hiddenNodes[layer]) Destroy(node);
 		foreach (ConnectionComponent connection in connections[layer]) Destroy(connection.gameObject);
@@ -157,6 +170,7 @@ public class PerceptronModule : MonoBehaviour {
 
 	private void HoldConnectionButton(int layer) {
 		if (trainingStage) return;
+		Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonPress, transform);
 		CurrentLearningRate.text = "";
 		CurrentLearningTime.text = "";
 		ConvergenceRate.text = (data.convergenceRates[layer] / 100f).ToString("n2");
@@ -165,8 +179,9 @@ public class PerceptronModule : MonoBehaviour {
 		MaxLearningTime.text = "";
 	}
 
-	private void UnholdConnectionButton() {
+	private void UnholdConnectionButton(bool playSound = true) {
 		if (trainingStage) return;
+		if (playSound) Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonRelease, transform);
 		CurrentLearningRate.text = "-";
 		CurrentLearningTime.text = "-";
 		ConvergenceRate.text = "/";
@@ -178,20 +193,16 @@ public class PerceptronModule : MonoBehaviour {
 	private void PressScreen() {
 		if (training) return;
 		if (trainingStage) {
-			if (shouldSolve) {
-				Module.HandlePass();
-				solved = true;
-				training = true;
-			} else {
-				Module.HandleStrike();
-				trainingStage = false;
-				UnholdConnectionButton();
-			}
+			trainingStage = false;
+			Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonRelease, transform);
+			UnholdConnectionButton(false);
 			return;
 		}
+		trainingSound = Audio.PlaySoundAtTransformWithRef("PerceptronTrainingProcess", transform);
+		Debug.LogFormat("[Perceptron #{0}] Start training: {1}", moduleId, hiddenLayers.Join(""));
 		training = true;
 		trainingStage = true;
-		trainingProcess = new Vector2Int(0, Random.Range(0, inputsCount * hiddenLayers[0]));
+		trainingProcess = new Vector2Int(0, Random.Range(0, data.inputsCount * hiddenLayers[0]));
 		targetAccuracy = PerceptronData.CalculateAccuracy(data.inputsCount, data.outputsCount, hiddenLayers, data.convergenceRates);
 		targetLearningTime = ParseTime(PerceptronData.CalculateLearningTime(data.inputsCount, data.outputsCount, hiddenLayers, data.connectionsDelay));
 		startingLearningTime = Mathf.CeilToInt(Time.time * 1e3f);

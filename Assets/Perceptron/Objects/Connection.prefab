@@ -23,6 +23,7 @@ GameObject:
   - component: {fileID: 65457532676935622}
   - component: {fileID: 23112492654078258}
   - component: {fileID: 114367925341634038}
+  - component: {fileID: 114778147075336996}
   m_Layer: 0
   m_Name: Connection
   m_TagString: Untagged
@@ -108,3 +109,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   MeshRenderer: {fileID: 23112492654078258}
+--- !u!114 &114778147075336996
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  m_GameObject: {fileID: 1222555192953886}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: -1005838349, guid: 45b809be76fd7a3468b6f517bced6f28, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShaderNames:
+  - Unlit/Color
