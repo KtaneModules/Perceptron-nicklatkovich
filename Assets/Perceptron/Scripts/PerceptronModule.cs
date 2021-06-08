@@ -1,4 +1,6 @@
-﻿using System.Linq;
+﻿using System.Collections;
+using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using KModkit;
 
@@ -8,6 +10,15 @@ public class PerceptronModule : MonoBehaviour {
 	private const float NODE_SIZE = 0.01f;
 
 	private static int moduleIdCounter = 1;
+
+	public readonly string TwitchHelpMessage = new string[] {
+		"\"!{0} cycle\" - view all connections' info",
+		"\"!{0} inspect 012\" - view specific connections' info: 0 - connections between input and 1st layer, 1 - between 1st and 2nd, ..., 4 - between 4th and output layer",
+		"\"!{0} set 1234\" - set hidden layers' sizes",
+		"\"!{0} train\" - start training",
+		"\"!{0} submit 1234\" - set hidden layers' sizes and start training",
+		"\"!{0} reset\" - exit training mode (when training failed)",
+	}.Join(" | ");
 
 	public GameObject InputNodePrefab;
 	public GameObject HiddenNodePrefab;
@@ -33,6 +44,8 @@ public class PerceptronModule : MonoBehaviour {
 	public KMBombInfo Bomb;
 	public KMAudio Audio;
 	public ConnectionComponent ConnectionPrefab;
+
+	public bool TwitchShouldCancelCommand;
 
 	private bool solved = false;
 	private bool shouldSolve = false;
@@ -129,7 +142,6 @@ public class PerceptronModule : MonoBehaviour {
 				}
 				CurrentLearningTime.text = (targetLearningTime / 1e3f).ToString("n3");
 				CurrentLearningRate.text = targetAccuracy.ToString();
-				shouldSolve = targetLearningTime <= ParseTime(data.maxLearningTime) && targetAccuracy >= data.requiredAccuracy;
 				Debug.LogFormat("[Perceptron #{0}] Training finished. Accuracy: {1}. Spent time: {2}", moduleId, targetAccuracy, (targetLearningTime / 1e3f).ToString("n3"));
 				if (shouldSolve) {
 					Debug.LogFormat("[Perceptron #{0}] Module solved", moduleId);
@@ -210,6 +222,87 @@ public class PerceptronModule : MonoBehaviour {
 		accuracyTimeTo = Random.Range(1, targetLearningTime);
 		currentAccuracy = 0;
 		accuracyIntervalTo = Random.Range(0, targetAccuracy);
+		shouldSolve = targetLearningTime <= ParseTime(data.maxLearningTime) && targetAccuracy >= data.requiredAccuracy;
+	}
+
+	public IEnumerator ProcessTwitchCommand(string command) {
+		command = command.Trim().ToLower();
+		if (command == "cycle") command = "inspect 01234";
+		if (Regex.IsMatch(command, "^inspect [0-4 ]+$")) {
+			yield return null;
+			if (trainingStage) {
+				yield return "sendtochat {0}, !{1} can't view connections' info, finish current training first.";
+				yield break;
+			}
+			int[] connectionsIndices = command.Split(' ').Skip(1).Where(s => s.Length > 0).Join("").ToArray().Select(c => c - '0').ToArray();
+			if (connectionsIndices.Length > 5) yield return "waiting music";
+			KMSelectable[] connectionsButtons = new[] { ConnectionButton0, ConnectionButton1, ConnectionButton2, ConnectionButton3, ConnectionButton4 };
+			foreach (int index in connectionsIndices) {
+				HoldConnectionButton(index);
+				GameObject highlight = connectionsButtons[index].Highlight.transform.GetChild(0).gameObject;
+				highlight.SetActive(true);
+				yield return new WaitForSeconds(3f);
+				yield return null;
+				UnholdConnectionButton();
+				highlight.SetActive(false);
+				if (TwitchShouldCancelCommand) {
+					yield return "cancelled";
+					break;
+				}
+			}
+			yield break;
+		}
+		bool shouldTrain = false;
+		if (Regex.IsMatch(command, "^submit ([1-4] *){4}$")) {
+			shouldTrain = true;
+			command = "set " + command.Split(' ').Skip(1).Join("");
+		}
+		if (Regex.IsMatch(command, "^set ([1-4] *){4}$")) {
+			yield return null;
+			if (trainingStage) {
+				yield return "sendtochat {0}, !{1} can't set hidden layers, finish current training first.";
+				yield break;
+			}
+			int[] expectedLayersSizes = command.Split(' ').Skip(1).Where(s => s.Length > 0).Join("").ToArray().Select(c => c - '0').ToArray();
+			for (int i = 0; i < 4; i++) {
+				while (hiddenLayers[i] != expectedLayersSizes[i]) {
+					PressLayerButton(i);
+					yield return new WaitForSeconds(.1f);
+				}
+			}
+		}
+		if (command == "train") shouldTrain = true;
+		if (shouldTrain) {
+			yield return null;
+			if (trainingStage) {
+				yield return "sendtochat {0}, !{1} can't start training, finish current training first.";
+				yield break;
+			}
+			PressScreen();
+			if (shouldSolve) yield return "solve";
+			yield break;
+		}
+		if (command == "reset") {
+			yield return null;
+			if (!trainingStage) {
+				yield return "sendtochat {0}, !{1} can't exit training mode: training not started.";
+				yield break;
+			}
+			if (training) {
+				yield return "sendtochat {0}, !{1} can't exit training mode: training not finished.";
+				yield break;
+			}
+			yield return new[] { Screen };
+			yield break;
+		}
+	}
+
+	private IEnumerator TwitchHandleForcedSolve() {
+		yield return null;
+		while (training) yield return new WaitForSeconds(.1f);
+		if (trainingStage) PressScreen();
+		yield return ProcessTwitchCommand("submit " + data.answerExample.Join(""));
+		while (training) yield return new WaitForSeconds(.1f);
 	}
 
 	private int ParseTime(int time) {

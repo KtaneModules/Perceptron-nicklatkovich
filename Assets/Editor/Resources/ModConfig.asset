@@ -15,6 +15,6 @@ MonoBehaviour:
   title: Perceptron
   author: NickLatkovich
   description: Build a neural network that meets the specified conditions.
-  version: 0.1.0
+  version: 0.2.0
   outputFolder: build
   previewImage: {fileID: 2800000, guid: 776194cc829e0c845a9875cf920f6546, type: 3}
