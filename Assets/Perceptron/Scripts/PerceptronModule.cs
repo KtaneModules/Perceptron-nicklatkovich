@@ -302,7 +302,6 @@ public class PerceptronModule : MonoBehaviour {
 		while (training) yield return new WaitForSeconds(.1f);
 		if (trainingStage) PressScreen();
 		yield return ProcessTwitchCommand("submit " + data.answerExample.Join(""));
-		while (training) yield return new WaitForSeconds(.1f);
 	}
 
 	private int ParseTime(int time) {
